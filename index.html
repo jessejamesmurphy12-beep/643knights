@@ -20,6 +20,7 @@ video{width:100%;border-radius:8px}small{opacity:.7}
 <div id="login" class="card hide"><h3>Sign in</h3><div class="row"><input id="em" placeholder="Email" type="email"><input id="pw" placeholder="Password" type="password"></div><p><button class="big" onclick="login()">Sign in</button></p><small id="lerr"></small></div>
 
 <div id="setup" class="hide">
+ <div class="card"><h3>Games</h3><div id="gl"></div></div>
  <div class="card"><h3>New game</h3><div class="row"><input id="gd" type="date"><select id="gs"><option value="live">Live</option><option value="video">Video</option></select></div>
  <div class="row" style="margin-top:5px"><input id="ta" placeholder="Away team"><input id="th" placeholder="Home team"></div>
  <input id="gv" placeholder="Video URL (video mode)" style="width:100%;margin-top:5px"></div>
@@ -31,7 +32,7 @@ video{width:100%;border-radius:8px}small{opacity:.7}
 <div id="chart" class="hide">
  <video id="vid" controls class="hide"></video>
  <div class="card"><div class="row"><select id="sp"></select><select id="sb"></select></div>
-  <div id="cnt"></div><div class="row"><button onclick="inn(-1)">Inn −</button><span id="inn" style="text-align:center;padding:9px"></span><button onclick="inn(1)">Inn +</button><button onclick="undo()">Undo</button></div>
+  <div id="cnt"></div><div class="row"><button onclick="inn(-1)">Inn −</button><span id="inn" style="text-align:center;padding:9px"></span><button onclick="inn(1)">Inn +</button><button onclick="undo()">Undo</button><button onclick="endG()">End game</button></div>
   <small id="q"></small></div>
  <div class="card"><h3>Pitch type</h3><div class="row" id="pty"></div></div>
  <div class="card"><h3>Location (catcher view)</h3>
@@ -46,7 +47,7 @@ video{width:100%;border-radius:8px}small{opacity:.7}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const sb=supabase.createClient('https://wnlxctlzvqssguofjbsh.supabase.co','sb_publishable_CWvqp36nF0fbPg6kfaQ1fg_pJYfeEHV');
-const $=s=>document.querySelector(s),show=id=>{['login','setup','chart'].forEach(x=>$('#'+x).classList.toggle('hide',x!==id))};
+const $=s=>document.querySelector(s),show=id=>{['login','setup','chart'].forEach(x=>$('#'+x).classList.toggle('hide',x!==id));if(id=='setup')loadGames()};
 const PT=['FA','SI','FC','SL','ST','CH','FS','CU','N/A'],RES=[['ball','Ball'],['called_str','Called Str'],['swing_str','Swing Str'],['foul','Foul'],['foul_tip','Foul Tip'],['in_play','In Play'],['hbp','HBP']];
 const BBT=['GB','LD','FB','PU'],BBO=['out','1B','2B','3B','HR','error'];
 let G=null,players=[],pt=null,loc=null,bbt=null,bbo=null,sp=null,hist=[],S={outs:0,balls:0,strikes:0,inning:1};
@@ -58,16 +59,17 @@ async function team(name){let{data}=await sb.from('teams').select('id').eq('name
 async function addP(){const n=$('#pn').value.trim(),tn=$($('#pt').value=='a'?'#ta':'#th').value.trim();if(!n||!tn)return $('#serr').textContent='Enter team names and a player name';
  const tid=await team(tn);const{error}=await sb.from('players').insert({team_id:tid,name:n,bats:$('#pb').value,throws:$('#pth').value});
  $('#serr').textContent=error?error.message:'';$('#pn').value='';listP()}
-async function listP(){const ids=[];for(const k of['#ta','#th'])if($(k).value.trim())ids.push(await team($(k).value.trim()));
+async function listP(){const ids=[];for(const k of['#ta','#th'])if($(k).value.trim()){const{data:t}=await sb.from('teams').select('id').eq('name',$(k).value.trim()).limit(1);if(t&&t[0])ids.push(t[0].id)}
  const{data}=await sb.from('players').select('*,teams(name)').in('team_id',ids).order('name');players=data||[];
  $('#pl').innerHTML=players.map(p=>`<small>${p.teams.name}: ${p.name} (${p.bats}/${p.throws})</small>`).join('<br>')}
 $('#ta').onchange=$('#th').onchange=listP;
 async function start(){if(!players.length)await listP();if(players.length<2)return $('#serr').textContent='Add at least a pitcher and a batter';
  const a=await team($('#ta').value.trim()),h=await team($('#th').value.trim());
  const{data,error}=await sb.from('games').insert({game_date:$('#gd').value,away_team_id:a,home_team_id:h,source:$('#gs').value,video_url:$('#gv').value||null}).select().single();
- if(error)return $('#serr').textContent=error.message;G=data;
+ if(error)return $('#serr').textContent=error.message;return enter(data)}
+async function enter(g){G=g;S={outs:0,balls:0,strikes:0,inning:1};hist=[];
  const opt=players.map(p=>`<option value="${p.id}">${p.name} (${p.teams.name})</option>`).join('');$('#sp').innerHTML=opt;$('#sb').innerHTML=opt;if(players[1])$('#sb').value=players[1].id;
- if(G.source=='video'&&G.video_url){$('#vid').src=G.video_url;$('#vid').classList.remove('hide')}
+ if(G.source=='video'&&G.video_url){$('#vid').src=G.video_url;$('#vid').classList.remove('hide')}else $('#vid').classList.add('hide');
  show('chart');draw();flush()}
 $('#pty').innerHTML=PT.map(t=>`<button onclick="pick(this,'${t}')">${t}</button>`).join('');
 $('#res').innerHTML=RES.map(([k,l])=>`<button class="${k=='in_play'?'ip':''}" onclick="rs('${k}')">${l}</button>`).join('');
@@ -80,7 +82,7 @@ $('#zone').onclick=e=>{const[x,y]=pt2($('#zone'),e);loc={x:(x-150)/75,y:(180-y)/
 let spr=null;$('#spray').onclick=e=>{const[x,y]=pt2($('#spray'),e);spr={x:(x-150)/150,y:(270-y)/270};$('#sdot').setAttribute('cx',x);$('#sdot').setAttribute('cy',y)};
 function draw(){$('#cnt').textContent=`${S.balls}-${S.strikes} · ${S.outs} out`;$('#inn').textContent='Inning '+S.inning;const n=Q().length;$('#q').textContent=n?n+' pitch(es) waiting to sync':'All synced'}
 function inn(d){S.inning=Math.max(1,S.inning+d);S.outs=0;draw()}
-function base(){const p=players.find(x=>x.id==$('#sb').value);return{id:crypto.randomUUID(),game_id:G.id,pitcher_id:$('#sp').value,batter_id:$('#sb').value,inning:S.inning,outs:S.outs,balls:S.balls,strikes:S.strikes,pitch_type:pt,loc_x:loc.x,loc_y:loc.y,video_ts:G.source=='video'?$('#vid').currentTime:null}}
+function base(){const p=players.find(x=>x.id==$('#sb').value);return{id:crypto.randomUUID(),created_at:new Date().toISOString(),game_id:G.id,pitcher_id:$('#sp').value,batter_id:$('#sb').value,inning:S.inning,outs:S.outs,balls:S.balls,strikes:S.strikes,pitch_type:pt,loc_x:loc.x,loc_y:loc.y,video_ts:G.source=='video'?$('#vid').currentTime:null}}
 function rs(r){if(!pt||!loc)return alert('Pick a pitch type and tap the location first');if(r=='in_play'){bbt=bbo=spr=null;$('#bb').classList.remove('hide');$('#bb').scrollIntoView();return}commit(r)}
 function saveBB(){if(!bbt||!bbo||!spr)return alert('Pick hit type, outcome, and tap the field');$('#bb').classList.add('hide');commit('in_play',{bb_type:bbt,bb_outcome:bbo,bb_x:spr.x,bb_y:spr.y})}
 function commit(r,extra={}){const p={...base(),result:r,...extra};hist.push({id:p.id,S:{...S}});
@@ -92,5 +94,16 @@ function commit(r,extra={}){const p={...base(),result:r,...extra};hist.push({id:
  localStorage.q=JSON.stringify([...Q(),p]);pt=loc=null;[...$('#pty').children].forEach(x=>x.classList.remove('on'));$('#dot').setAttribute('cx',-20);draw();flush()}
 async function flush(){const q=Q();if(!q.length)return;const{error}=await sb.from('pitches').insert(q);if(!error){const ids=q.map(x=>x.id);localStorage.q=JSON.stringify(Q().filter(x=>!ids.includes(x.id)));draw()}}
 async function undo(){const h=hist.pop();if(!h)return;S=h.S;const q=Q();if(q.some(x=>x.id==h.id))localStorage.q=JSON.stringify(q.filter(x=>x.id!=h.id));else await sb.from('pitches').delete().eq('id',h.id);draw()}
+function adv(r,o){if(r=='ball'){S.balls++;if(S.balls>3)S.balls=S.strikes=0}else if(r=='called_str'||r=='swing_str'){S.strikes++;if(S.strikes>2){S.outs++;S.balls=S.strikes=0}}else if(r=='foul'||r=='foul_tip'){if(S.strikes<2)S.strikes++}else{if(r=='in_play'&&o=='out')S.outs++;S.balls=S.strikes=0}if(S.outs>2){S.outs=0;S.inning++}}
+async function loadGames(){const{data,error}=await sb.from('games').select('id,game_date,ended_at,away:teams!games_away_team_id_fkey(name),home:teams!games_home_team_id_fkey(name),pitches(count)').order('game_date',{ascending:false}).limit(30);
+ $('#gl').innerHTML=error?error.message:(data||[]).map(g=>`<div class="row" style="margin:4px 0;align-items:center"><span style="flex:3">${g.game_date} · ${g.away?g.away.name:'?'} @ ${g.home?g.home.name:'?'}<br><small>${g.pitches[0].count} pitches${g.ended_at?' · ended':''}</small></span><button onclick="resume('${g.id}')">Resume</button><button onclick="delG('${g.id}')">Delete</button></div>`).join('')||'<small>No games yet</small>'}
+async function resume(id){await flush();const{data:g}=await sb.from('games').select('*').eq('id',id).single();
+ const{data:pl}=await sb.from('players').select('*,teams(name)').in('team_id',[g.away_team_id,g.home_team_id]).order('name');players=pl||[];
+ const{data:ps}=await sb.from('pitches').select('result,bb_outcome,pitcher_id,batter_id').eq('game_id',id).order('created_at');
+ await enter(g);S={outs:0,balls:0,strikes:0,inning:1};(ps||[]).forEach(p=>adv(p.result,p.bb_outcome));
+ const l=(ps||[]).slice(-1)[0];if(l){$('#sp').value=l.pitcher_id;$('#sb').value=l.batter_id}
+ if(g.ended_at)await sb.from('games').update({ended_at:null}).eq('id',id);draw()}
+async function endG(){if(!confirm('End this game? You can resume it later.'))return;await flush();await sb.from('games').update({ended_at:new Date().toISOString()}).eq('id',G.id);G=null;show('setup')}
+async function delG(id){if(!confirm('Delete this game and all its pitches? This cannot be undone.'))return;localStorage.q=JSON.stringify(Q().filter(x=>x.game_id!=id));const{error}=await sb.from('games').delete().eq('id',id);if(error)alert(error.message);loadGames()}
 addEventListener('online',flush);setInterval(flush,15000);
 </script></body></html>
