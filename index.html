@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>643 Charting</title>
+<style>
+:root{--g:#0b4f2a;--o:#d9731f;--bg:#eee;--c:#fff;--t:#111;--l:#ccc}
+@media(prefers-color-scheme:dark){:root{--bg:#101410;--c:#1c211c;--t:#eee;--l:#444}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:15px system-ui,sans-serif;padding:env(safe-area-inset-top) 8px 40px}
+.card{background:var(--c);border-radius:12px;padding:10px;margin:8px 0}
+h3{margin:0 0 6px;font-size:14px;color:var(--g)}
+button,select,input{font:inherit;padding:9px;border-radius:8px;border:1px solid var(--l);background:var(--c);color:var(--t)}
+button{cursor:pointer}button.on{background:var(--g);color:#fff;border-color:var(--g)}
+.row{display:flex;flex-wrap:wrap;gap:5px}.row>*{flex:1 1 auto}
+.res button{flex:1 1 30%}.res .ip{background:#f4d9c0;color:#000}
+.big{background:var(--g);color:#fff;border:0;width:100%;padding:12px}
+.hide{display:none}#cnt{font-size:22px;font-weight:700;text-align:center}
+svg{width:100%;max-width:340px;display:block;margin:auto;background:#f6f6f6;border-radius:8px;touch-action:manipulation}
+video{width:100%;border-radius:8px}small{opacity:.7}
+</style></head><body>
+<div id="login" class="card hide"><h3>Sign in</h3><div class="row"><input id="em" placeholder="Email" type="email"><input id="pw" placeholder="Password" type="password"></div><p><button class="big" onclick="login()">Sign in</button></p><small id="lerr"></small></div>
+
+<div id="setup" class="hide">
+ <div class="card"><h3>New game</h3><div class="row"><input id="gd" type="date"><select id="gs"><option value="live">Live</option><option value="video">Video</option></select></div>
+ <div class="row" style="margin-top:5px"><input id="ta" placeholder="Away team"><input id="th" placeholder="Home team"></div>
+ <input id="gv" placeholder="Video URL (video mode)" style="width:100%;margin-top:5px"></div>
+ <div class="card"><h3>Add player</h3><div class="row"><select id="pt"><option value="a">Away</option><option value="h">Home</option></select><input id="pn" placeholder="Name"><select id="pb"><option>R</option><option>L</option><option>S</option></select><select id="pth"><option>R</option><option>L</option></select></div>
+ <p><button onclick="addP()">Add (bats / throws)</button></p><div id="pl"></div></div>
+ <button class="big" onclick="start()">Start charting</button><p><small id="serr"></small></p>
+</div>
+
+<div id="chart" class="hide">
+ <video id="vid" controls class="hide"></video>
+ <div class="card"><div class="row"><select id="sp"></select><select id="sb"></select></div>
+  <div id="cnt"></div><div class="row"><button onclick="inn(-1)">Inn −</button><span id="inn" style="text-align:center;padding:9px"></span><button onclick="inn(1)">Inn +</button><button onclick="undo()">Undo</button></div>
+  <small id="q"></small></div>
+ <div class="card"><h3>Pitch type</h3><div class="row" id="pty"></div></div>
+ <div class="card"><h3>Location (catcher view)</h3>
+  <svg id="zone" viewBox="0 0 300 360"><rect x="75" y="90" width="150" height="180" fill="none" stroke="#0b4f2a" stroke-width="2"/><path d="M75 150H225M75 210H225M125 90V270M175 90V270" stroke="#0b4f2a" stroke-width=".6"/><path d="M110 330H190L200 345H100Z" fill="#bbb"/><circle id="dot" r="7" fill="#d9731f" cx="-20" cy="-20"/></svg></div>
+ <div class="card res"><h3>Result</h3><div class="row" id="res"></div></div>
+</div>
+
+<div id="bb" class="hide card"><h3>Ball in play</h3><div class="row" id="bbt"></div><div class="row" id="bbo" style="margin:5px 0"></div>
+ <svg id="spray" viewBox="0 0 300 300"><path d="M150 270L10 130A200 200 0 0 1 290 130Z" fill="none" stroke="#0b4f2a"/><path d="M150 270L100 220L150 170L200 220Z" fill="none" stroke="#999"/><circle id="sdot" r="6" fill="#d9731f" cx="-20" cy="-20"/></svg>
+ <p><button class="big" onclick="saveBB()">Save ball in play</button> <button onclick="$('#bb').classList.add('hide')">Cancel</button></p></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const sb=supabase.createClient('https://wnlxctlzvqssguofjbsh.supabase.co','sb_publishable_CWvqp36nF0fbPg6kfaQ1fg_pJYfeEHV');
+const $=s=>document.querySelector(s),show=id=>{['login','setup','chart'].forEach(x=>$('#'+x).classList.toggle('hide',x!==id))};
+const PT=['FA','SI','FC','SL','ST','CH','FS','CU','N/A'],RES=[['ball','Ball'],['called_str','Called Str'],['swing_str','Swing Str'],['foul','Foul'],['foul_tip','Foul Tip'],['in_play','In Play'],['hbp','HBP']];
+const BBT=['GB','LD','FB','PU'],BBO=['out','1B','2B','3B','HR','error'];
+let G=null,players=[],pt=null,loc=null,bbt=null,bbo=null,sp=null,hist=[],S={outs:0,balls:0,strikes:0,inning:1};
+const Q=()=>JSON.parse(localStorage.q||'[]');
+$('#gd').valueAsDate=new Date();
+async function login(){const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});error?$('#lerr').textContent=error.message:show('setup')}
+sb.auth.getSession().then(({data})=>show(data.session?'setup':'login'));
+async function team(name){let{data}=await sb.from('teams').select('id').eq('name',name).limit(1);if(data&&data[0])return data[0].id;return(await sb.from('teams').insert({name}).select().single()).data.id}
+async function addP(){const n=$('#pn').value.trim(),tn=$($('#pt').value=='a'?'#ta':'#th').value.trim();if(!n||!tn)return $('#serr').textContent='Enter team names and a player name';
+ const tid=await team(tn);const{error}=await sb.from('players').insert({team_id:tid,name:n,bats:$('#pb').value,throws:$('#pth').value});
+ $('#serr').textContent=error?error.message:'';$('#pn').value='';listP()}
+async function listP(){const ids=[];for(const k of['#ta','#th'])if($(k).value.trim())ids.push(await team($(k).value.trim()));
+ const{data}=await sb.from('players').select('*,teams(name)').in('team_id',ids).order('name');players=data||[];
+ $('#pl').innerHTML=players.map(p=>`<small>${p.teams.name}: ${p.name} (${p.bats}/${p.throws})</small>`).join('<br>')}
+$('#ta').onchange=$('#th').onchange=listP;
+async function start(){if(!players.length)await listP();if(players.length<2)return $('#serr').textContent='Add at least a pitcher and a batter';
+ const a=await team($('#ta').value.trim()),h=await team($('#th').value.trim());
+ const{data,error}=await sb.from('games').insert({game_date:$('#gd').value,away_team_id:a,home_team_id:h,source:$('#gs').value,video_url:$('#gv').value||null}).select().single();
+ if(error)return $('#serr').textContent=error.message;G=data;
+ const opt=players.map(p=>`<option value="${p.id}">${p.name} (${p.teams.name})</option>`).join('');$('#sp').innerHTML=opt;$('#sb').innerHTML=opt;if(players[1])$('#sb').value=players[1].id;
+ if(G.source=='video'&&G.video_url){$('#vid').src=G.video_url;$('#vid').classList.remove('hide')}
+ show('chart');draw();flush()}
+$('#pty').innerHTML=PT.map(t=>`<button onclick="pick(this,'${t}')">${t}</button>`).join('');
+$('#res').innerHTML=RES.map(([k,l])=>`<button class="${k=='in_play'?'ip':''}" onclick="rs('${k}')">${l}</button>`).join('');
+$('#bbt').innerHTML=BBT.map(t=>`<button onclick="sel(this,'t','${t}')">${t}</button>`).join('');
+$('#bbo').innerHTML=BBO.map(t=>`<button onclick="sel(this,'o','${t}')">${t}</button>`).join('');
+function pick(b,t){pt=t;[...$('#pty').children].forEach(x=>x.classList.toggle('on',x==b))}
+function sel(b,k,v){k=='t'?bbt=v:bbo=v;[...b.parentNode.children].forEach(x=>x.classList.toggle('on',x==b))}
+function pt2(svg,e){const r=svg.getBoundingClientRect(),vb=svg.viewBox.baseVal;return[(e.clientX-r.left)/r.width*vb.width,(e.clientY-r.top)/r.height*vb.height]}
+$('#zone').onclick=e=>{const[x,y]=pt2($('#zone'),e);loc={x:(x-150)/75,y:(180-y)/90};$('#dot').setAttribute('cx',x);$('#dot').setAttribute('cy',y)};
+let spr=null;$('#spray').onclick=e=>{const[x,y]=pt2($('#spray'),e);spr={x:(x-150)/150,y:(270-y)/270};$('#sdot').setAttribute('cx',x);$('#sdot').setAttribute('cy',y)};
+function draw(){$('#cnt').textContent=`${S.balls}-${S.strikes} · ${S.outs} out`;$('#inn').textContent='Inning '+S.inning;const n=Q().length;$('#q').textContent=n?n+' pitch(es) waiting to sync':'All synced'}
+function inn(d){S.inning=Math.max(1,S.inning+d);S.outs=0;draw()}
+function base(){const p=players.find(x=>x.id==$('#sb').value);return{id:crypto.randomUUID(),game_id:G.id,pitcher_id:$('#sp').value,batter_id:$('#sb').value,inning:S.inning,outs:S.outs,balls:S.balls,strikes:S.strikes,pitch_type:pt,loc_x:loc.x,loc_y:loc.y,video_ts:G.source=='video'?$('#vid').currentTime:null}}
+function rs(r){if(!pt||!loc)return alert('Pick a pitch type and tap the location first');if(r=='in_play'){bbt=bbo=spr=null;$('#bb').classList.remove('hide');$('#bb').scrollIntoView();return}commit(r)}
+function saveBB(){if(!bbt||!bbo||!spr)return alert('Pick hit type, outcome, and tap the field');$('#bb').classList.add('hide');commit('in_play',{bb_type:bbt,bb_outcome:bbo,bb_x:spr.x,bb_y:spr.y})}
+function commit(r,extra={}){const p={...base(),result:r,...extra};hist.push({id:p.id,S:{...S}});
+ if(r=='ball'){S.balls++;if(S.balls>3)S.balls=S.strikes=0}
+ else if(r=='called_str'||r=='swing_str'){S.strikes++;if(S.strikes>2){S.outs++;S.balls=S.strikes=0}}
+ else if(r=='foul'||r=='foul_tip'){if(S.strikes<2)S.strikes++}
+ else{if(r=='in_play'&&extra.bb_outcome=='out')S.outs++;S.balls=S.strikes=0}
+ if(S.outs>2){S.outs=0;S.inning++}
+ localStorage.q=JSON.stringify([...Q(),p]);pt=loc=null;[...$('#pty').children].forEach(x=>x.classList.remove('on'));$('#dot').setAttribute('cx',-20);draw();flush()}
+async function flush(){const q=Q();if(!q.length)return;const{error}=await sb.from('pitches').insert(q);if(!error){const ids=q.map(x=>x.id);localStorage.q=JSON.stringify(Q().filter(x=>!ids.includes(x.id)));draw()}}
+async function undo(){const h=hist.pop();if(!h)return;S=h.S;const q=Q();if(q.some(x=>x.id==h.id))localStorage.q=JSON.stringify(q.filter(x=>x.id!=h.id));else await sb.from('pitches').delete().eq('id',h.id);draw()}
+addEventListener('online',flush);setInterval(flush,15000);
+</script></body></html>
