@@ -17,6 +17,10 @@ button{cursor:pointer}button.on{background:var(--g);color:#fff;border-color:var(
 svg{width:100%;max-width:340px;display:block;margin:auto;background:#f6f6f6;border-radius:8px;touch-action:manipulation}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;text-align:center;border-bottom:1px solid var(--l)}
 video{width:100%;border-radius:8px}small{opacity:.7}
+.zg{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px}.zp b{font-size:12px}.zp svg{max-width:100%}
+textarea{width:100%;min-height:70px;margin-top:8px;font:inherit;border-radius:8px;border:1px solid var(--l);background:var(--c);color:var(--t);padding:8px}
+#pz{display:none}
+@media print{@page{size:letter landscape;margin:.4in}:root{--c:#fff;--t:#000;--l:#ccc}body>*:not(#pz){display:none!important}#pz{display:block!important}body{background:#fff;color:#000;padding:0}.noprint{display:none!important}.zg{grid-template-columns:repeat(5,1fr)}table{font-size:10px}h2{margin:0 0 6px;font-size:18px}.note{border:1px solid #999;min-height:50px;padding:6px;margin-top:6px;font-size:11px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
 <div id="login" class="card hide"><h3>Sign in</h3><div class="row"><input id="em" placeholder="Email" type="email"><input id="pw" placeholder="Password" type="password"></div><p><button class="big" onclick="login()">Sign in</button></p><small id="lerr"></small></div>
 
@@ -32,7 +36,7 @@ video{width:100%;border-radius:8px}small{opacity:.7}
   <div class="card"><h3>Add team</h3><div class="row"><input id="tn" placeholder="Team name"><button onclick="addT()">Add team</button></div></div>
   <div class="card"><h3>Add player</h3><div class="row"><select id="ptm"></select><input id="pn" placeholder="Name"><select id="pb"><option>R</option><option>L</option><option>S</option></select><select id="pth"><option>R</option><option>L</option></select></div><p><button onclick="addP()">Add player (bats / throws)</button></p><small id="perr"></small></div>
   <div class="card" id="pl"></div></div>
- <div id="t-rep" class="hide"><div class="card"><h3>Pitcher report</h3><select id="rp" onchange="loadRep()" style="width:100%"></select><div id="rt" style="overflow-x:auto;margin-top:8px"></div><small>Full scouting report pages are next.</small></div></div>
+ <div id="t-rep" class="hide"><div class="card"><h3>Pitcher report</h3><select id="rp" onchange="loadRep()" style="width:100%"></select><div id="rt" style="margin-top:8px"></div><textarea id="rn" placeholder="Scouting notes (saved when you tap away)" onblur="saveNote($('#rp').value,this.value)"></textarea><p><button onclick="pr('p')">Export PDF</button></p></div><div class="card"><h3>Hitter report</h3><div class="row"><select id="hp" onchange="loadHit()"></select><select id="hh" onchange="loadHit()"><option value="">vs all pitchers</option><option value="R">vs RHP</option><option value="L">vs LHP</option></select></div><div id="ht" style="margin-top:8px"></div><textarea id="hn" placeholder="Scouting notes (saved when you tap away)" onblur="saveNote($('#hp').value,this.value)"></textarea><p><button onclick="pr('h')">Export PDF</button></p></div></div>
 </div>
 
 <div id="chart" class="hide">
@@ -50,6 +54,7 @@ video{width:100%;border-radius:8px}small{opacity:.7}
  <svg id="spray" viewBox="0 0 300 300"><path d="M150 270L10 130A200 200 0 0 1 290 130Z" fill="none" stroke="#0b4f2a"/><path d="M150 270L100 220L150 170L200 220Z" fill="none" stroke="#999"/><circle id="sdot" r="6" fill="#d9731f" cx="-20" cy="-20"/></svg>
  <p><button class="big" onclick="saveBB()">Save ball in play</button> <button onclick="$('#bb').classList.add('hide')">Cancel</button></p></div>
 
+<div id="pz"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 const sb=supabase.createClient('https://wnlxctlzvqssguofjbsh.supabase.co','sb_publishable_CWvqp36nF0fbPg6kfaQ1fg_pJYfeEHV');
@@ -64,9 +69,10 @@ let TEAMS=[],ALLP=[];
 async function login(){const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});error?$('#lerr').textContent=error.message:show('app')}
 sb.auth.getSession().then(({data})=>show(data.session?'app':'login'));
 function tab(n){['chart','ppl','rep'].forEach(k=>{$('#t-'+k).classList.toggle('hide',k!=n);$('#b-'+k).classList.toggle('on',k==n)});refresh();if(n=='chart')loadGames()}
-async function refresh(){const ids=['#ta','#th','#ptm','#rp'],keep=ids.map(k=>$(k).value);const[t,p]=await Promise.all([sb.from('teams').select('*').order('name'),sb.from('players').select('*,teams(name)').order('name')]);TEAMS=t.data||[];ALLP=p.data||[];
+async function refresh(){const ids=['#ta','#th','#ptm','#rp','#hp'],keep=ids.map(k=>$(k).value);const[t,p]=await Promise.all([sb.from('teams').select('*').order('name'),sb.from('players').select('*,teams(name)').order('name')]);TEAMS=t.data||[];ALLP=p.data||[];
  const to=TEAMS.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');['#ta','#th','#ptm'].forEach(k=>$(k).innerHTML=to);
  $('#rp').innerHTML='<option value="">Pick a pitcher</option>'+ALLP.map(x=>`<option value="${x.id}">${esc(x.name)} (${esc(x.teams.name)})</option>`).join('');
+ $('#hp').innerHTML=$('#rp').innerHTML.replace('Pick a pitcher','Pick a hitter');
  ids.forEach((k,i)=>{if(keep[i])$(k).value=keep[i]});if(TEAMS[1]&&!keep[1])$('#th').value=TEAMS[1].id;
  $('#pl').innerHTML=TEAMS.map(x=>`<h3>${esc(x.name)}</h3>`+(ALLP.filter(p=>p.team_id==x.id).map(p=>`<div>${esc(p.name)} <small>${p.bats}/${p.throws}</small></div>`).join('')||'<small>No players yet</small>')).join('')||'<small>Add a team to get started</small>'}
 async function addT(){const n=$('#tn').value.trim();if(!n)return;const{error}=await sb.from('teams').insert({name:n});if(error)alert(error.message);$('#tn').value='';refresh()}
@@ -75,10 +81,10 @@ async function start(){const a=$('#ta').value,h=$('#th').value;if(!a||!h||a==h)r
  const{data:pl}=await sb.from('players').select('*,teams(name)').in('team_id',[a,h]).order('name');players=pl||[];if(players.length<2)return $('#serr').textContent='Add players to both teams first (Teams & Players tab)';
  const{data,error}=await sb.from('games').insert({game_date:$('#gd').value,away_team_id:a,home_team_id:h,source:$('#gs').value,video_url:$('#gv').value||null}).select().single();
  if(error)return $('#serr').textContent=error.message;$('#serr').textContent='';return enter(data)}
-async function loadRep(){const id=$('#rp').value;if(!id){$('#rt').innerHTML='';return}const{data}=await sb.from('pitches').select('pitch_type,result').eq('pitcher_id',id).limit(5000);const d=data||[],by={};d.forEach(p=>{const k=p.pitch_type||'N/A';(by[k]=by[k]||[]).push(p.result)});
+async function loadRep(){const id=$('#rp').value;if(!id){$('#rt').innerHTML='';return}const{data}=await sb.from('pitches').select('pitch_type,result,loc_x,loc_y,bb_type,bb_x,bb_y,bb_outcome').eq('pitcher_id',id).limit(5000);const d=data||[],by={};RP=d;RPT='All';d.forEach(p=>{const k=p.pitch_type||'N/A';(by[k]=by[k]||[]).push(p.result)});
  const c=(a,fn)=>a.filter(fn).length,pc=(n,t)=>t?Math.round(n/t*100)+'%':'–',SW=['swing_str','foul','foul_tip','in_play'];
  const row=(k,a)=>{const sw=c(a,x=>SW.includes(x));return`<tr><td>${esc(k)}</td><td>${a.length}</td><td>${pc(a.length,d.length)}</td><td>${pc(c(a,x=>x!='ball'&&x!='hbp'),a.length)}</td><td>${pc(c(a,x=>x=='swing_str'),sw)}</td><td>${pc(c(a,x=>x=='called_str'||x=='swing_str'),a.length)}</td></tr>`};
- $('#rt').innerHTML=d.length?`<table><tr><th>Pitch</th><th>#</th><th>Use</th><th>Strike</th><th>Whiff</th><th>CSW</th></tr>${Object.entries(by).sort((x,y)=>y[1].length-x[1].length).map(([k,a])=>row(k,a)).join('')}${row('All',d.map(p=>p.result))}</table>`:'<small>No pitches charted for this pitcher yet</small>'}
+ $('#rt').innerHTML=d.length?`<div style="overflow-x:auto"><table><tr><th>Pitch</th><th>#</th><th>Use</th><th>Strike</th><th>Whiff</th><th>CSW</th></tr>${Object.entries(by).sort((x,y)=>y[1].length-x[1].length).map(([k,a])=>row(k,a)).join('')}${row('All',d.map(p=>p.result))}</table></div><div id="rz"></div>`:'<small>No pitches charted for this pitcher yet</small>';$('#rn').value=(ALLP.find(x=>x.id==id)||{}).scout_notes||'';renderPit()}
 async function enter(g){G=g;S={outs:0,balls:0,strikes:0,inning:1};hist=[];
  const opt=players.map(p=>`<option value="${p.id}">${p.name} (${p.teams.name})</option>`).join('');$('#sp').innerHTML=opt;$('#sb').innerHTML=opt;if(players[1])$('#sb').value=players[1].id;
  if(G.source=='video'&&G.video_url){$('#vid').src=G.video_url;$('#vid').classList.remove('hide')}else $('#vid').classList.add('hide');
@@ -117,5 +123,42 @@ async function resume(id){await flush();const{data:g}=await sb.from('games').sel
  if(g.ended_at)await sb.from('games').update({ended_at:null}).eq('id',id);draw()}
 async function endG(){if(!confirm('End this game? You can resume it later.'))return;await flush();await sb.from('games').update({ended_at:new Date().toISOString()}).eq('id',G.id);G=null;show('app')}
 async function delG(id){if(!confirm('Delete this game and all its pitches? This cannot be undone.'))return;localStorage.q=JSON.stringify(Q().filter(x=>x.game_id!=id));const{error}=await sb.from('games').delete().eq('id',id);if(error)alert(error.message);loadGames()}
+const pc=(n,t)=>t?Math.round(n/t*100)+'%':'–',SW=['swing_str','foul','foul_tip','in_play'];
+let HP=[],HPT='All';
+const ang=p=>Math.atan2(p.bb_x*150,p.bb_y*270)*180/Math.PI,rad=p=>Math.hypot(p.bb_x*150,p.bb_y*270),fair=p=>Math.abs(ang(p))<=45&&rad(p)<=210;
+async function loadHit(){const id=$('#hp').value;if(!id){$('#ht').innerHTML='';return}
+ const{data}=await sb.from('pitches').select('pitch_type,result,loc_x,loc_y,bb_type,bb_x,bb_y,bb_outcome,pitcher:players!pitches_pitcher_id_fkey(throws)').eq('batter_id',id).limit(5000);
+ const h=$('#hh').value;HP=(data||[]).filter(p=>!h||(p.pitcher&&p.pitcher.throws==h));HPT='All';$('#hn').value=(ALLP.find(x=>x.id==id)||{}).scout_notes||'';renderHit()}
+function fan(bip){const P=(a,r)=>[150+r*Math.sin(a*Math.PI/180),270-r*Math.cos(a*Math.PI/180)],B=[-45,-27,-9,9,27,45],R=[0,110,210],z={};
+ bip.filter(fair).forEach(p=>{const i=Math.min(4,Math.floor((ang(p)+45)/18)),d=rad(p)<110?0:1;z[i+'-'+d]=(z[i+'-'+d]||0)+1});
+ const tot=Object.values(z).reduce((a,b)=>a+b,0)||1,mx=Math.max(1,...Object.values(z));let o='';
+ for(let i=0;i<5;i++)for(let d=0;d<2;d++){const n=z[i+'-'+d]||0,a0=B[i],a1=B[i+1],r0=R[d],r1=R[d+1],q=(a,r)=>P(a,r).map(v=>v.toFixed(1)).join(' ');
+  o+=`<path d="M${q(a0,r0)}L${q(a0,r1)}A${r1} ${r1} 0 0 1 ${q(a1,r1)}L${q(a1,r0)}A${r0} ${r0} 0 0 0 ${q(a0,r0)}Z" fill="#0b4f2a" fill-opacity="${(n/mx*.8).toFixed(2)}" stroke="#888" stroke-width=".6"/>`;
+  const t=P((a0+a1)/2,(r0+r1)/2);if(n)o+=`<text x="${t[0].toFixed(1)}" y="${(t[1]+4).toFixed(1)}" font-size="13" text-anchor="middle" fill="${n/mx>.5?'#fff':'#111'}">${Math.round(n/tot*100)}%</text>`}
+ bip.filter(fair).forEach(p=>{o+=`<circle cx="${150+p.bb_x*150}" cy="${270-p.bb_y*270}" r="3" fill="${['1B','2B','3B','HR'].includes(p.bb_outcome)?'#d9731f':'#555'}" stroke="#fff" stroke-width=".7"/>`});
+ return`<svg viewBox="0 0 300 300">${o}</svg>`}
+function renderHit(){const id=$('#hp').value,bats=(ALLP.find(x=>x.id==id)||{}).bats||'R';
+ if(!HP.length){$('#ht').innerHTML='<small>No pitches charted for this hitter yet</small>';return}
+ const side=p=>bats=='S'?(p.pitcher&&p.pitcher.throws=='R'?'L':'R'):bats,by={};HP.forEach(p=>{const k=p.pitch_type||'N/A';(by[k]=by[k]||[]).push(p)});
+ const row=(k,a)=>{const sw=a.filter(p=>SW.includes(p.result)),wh=a.filter(p=>p.result=='swing_str'),oz=a.filter(p=>Math.abs(p.loc_x)>1||Math.abs(p.loc_y)>1),b=a.filter(p=>p.result=='in_play'&&p.bb_x!=null),f=b.filter(fair),
+  dir=f.map(p=>{const x=ang(p)*(side(p)=='R'?1:-1);return x<-15?'P':x>15?'O':'M'}),n=f.length,c=t=>dir.filter(x=>x==t).length,bt=t=>b.filter(p=>p.bb_type==t).length;
+  return`<tr><td>${esc(k)}</td><td>${a.length}</td><td>${pc(sw.length,a.length)}</td><td>${pc(wh.length,sw.length)}</td><td>${pc(oz.filter(p=>SW.includes(p.result)).length,oz.length)}</td><td>${b.length}</td><td>${pc(c('P'),n)}</td><td>${pc(c('M'),n)}</td><td>${pc(c('O'),n)}</td><td>${pc(bt('GB'),b.length)}</td><td>${pc(bt('LD'),b.length)}</td><td>${pc(bt('FB'),b.length)}</td></tr>`};
+ const sel=HPT=='All'?HP:HP.filter(p=>(p.pitch_type||'N/A')==HPT),bip=sel.filter(p=>p.result=='in_play'&&p.bb_x!=null);
+ $('#ht').innerHTML=`<small>Bats ${bats}</small><div style="overflow-x:auto"><table><tr><th>Pitch</th><th>Seen</th><th>Swing</th><th>Whiff</th><th>Chase</th><th>BIP</th><th>Pull</th><th>Mid</th><th>Oppo</th><th>GB</th><th>LD</th><th>FB</th></tr>${Object.entries(by).sort((x,y)=>y[1].length-x[1].length).map(([k,a])=>row(k,a)).join('')}${row('All',HP)}</table></div>`+body(HP,'h')}
+let RP=[],RPT='All';
+const PC={FA:'#d62728',SI:'#ff7f0e',FC:'#8c564b',SL:'#1f77b4',ST:'#17becf',CH:'#2ca02c',FS:'#9467bd',CU:'#e377c2','N/A':'#666'},isSw=p=>SW.includes(p.result),oz=p=>Math.abs(p.loc_x)>1||Math.abs(p.loc_y)>1,hit=p=>['1B','2B','3B','HR'].includes(p.bb_outcome);
+function zp(t,a){const d=a.filter(p=>p.loc_x!=null).map(p=>`<circle cx="${(150+p.loc_x*75).toFixed(1)}" cy="${(180-p.loc_y*90).toFixed(1)}" r="5.5" fill="${PC[p.pitch_type||'N/A']||'#666'}" fill-opacity=".8"/>`).join('');
+ return`<div class="zp"><b>${t} <small>${a.length}</small></b><svg viewBox="45 60 210 240"><rect x="75" y="90" width="150" height="180" fill="none" stroke="#0b4f2a" stroke-width="2"/><path d="M75 150H225M75 210H225M125 90V270M175 90V270" stroke="#0b4f2a" stroke-width=".6"/>${d}</svg></div>`}
+function body(a,m){const cur=m=='h'?HPT:RPT,types=[...new Set(a.map(p=>p.pitch_type||'N/A'))],sel=cur=='All'?a:a.filter(p=>(p.pitch_type||'N/A')==cur),f=fn=>sel.filter(fn),bip=f(p=>p.result=='in_play'&&p.bb_x!=null),
+ sw=['Swings',f(isSw)],wh=['Whiffs',f(p=>p.result=='swing_str')],co=['Contacts',f(p=>['foul','foul_tip','in_play'].includes(p.result))],fo=['Fouls',f(p=>p.result=='foul'||p.result=='foul_tip')],hi=['Hits',f(p=>p.result=='in_play'&&hit(p))],ch=['Chase',f(p=>isSw(p)&&oz(p))],
+ L=m=='h'?[sw,wh,co,fo,['Takes',f(p=>p.result=='ball'||p.result=='called_str')],hi,['Outs',f(p=>p.result=='in_play'&&!hit(p))],ch]:[sw,wh,co,fo,['Balls',f(p=>p.result=='ball')],['Strikes',f(p=>['called_str','swing_str','foul','foul_tip'].includes(p.result))],hi,ch];
+ return`<h3 style="margin-top:10px">${m=='h'?'Where he hits it':'Where hitters hit him'} · ${esc(cur)}</h3><div class="row noprint">${['All',...types].map(k=>`<button class="${k==cur?'on':''}" onclick="setT('${m}','${k}')">${k}</button>`).join('')}</div>
+ <div class="row" style="margin:6px 0">${types.map(k=>`<small><span style="color:${PC[k]||'#666'}">●</span> ${k}</small>`).join(' ')}</div>
+ <div class="zg"><div class="zp" style="grid-column:span 2"><b>Balls in play <small>${bip.filter(fair).length}</small></b>${fan(bip)}</div>${L.map(([t,x])=>zp(t,x)).join('')}</div><small>Field areas show share of balls in play. Orange = hit, gray = out.${m=='h'?' Pull/Mid/Oppo are from the hitter\'s side.':''}</small>`}
+function setT(m,k){m=='h'?(HPT=k,renderHit()):(RPT=k,renderPit())}
+function renderPit(){if(!$('#rz'))return;$('#rz').innerHTML=body(RP,'p')}
+async function saveNote(id,v){if(!id)return;await sb.from('players').update({scout_notes:v}).eq('id',id);const p=ALLP.find(x=>x.id==id);if(p)p.scout_notes=v}
+function pr(k){const id=$(k=='h'?'#hp':'#rp').value;if(!id)return alert('Pick a player first');const p=ALLP.find(x=>x.id==id);
+ $('#pz').innerHTML=`<h2>${esc(p.name)} · ${esc(p.teams.name)} <small>${k=='h'?'Hitter':'Pitcher'} report · bats ${p.bats} / throws ${p.throws}</small></h2>`+$(k=='h'?'#ht':'#rt').innerHTML+`<div class="note"><b>Notes</b><br>${esc(p.scout_notes||'').replace(/\n/g,'<br>')}</div>`;window.print()}
 addEventListener('online',flush);setInterval(flush,15000);
 </script></body></html>
